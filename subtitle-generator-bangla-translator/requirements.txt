@@ -1,0 +1,5 @@
+assemblyai>=0.16.0
+
+deep-translator>=1.11.4
+
+tk
