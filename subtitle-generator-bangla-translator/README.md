@@ -1,6 +1,6 @@
 # Subtitle Generator & Bangla Translator
 
-A simple GUI application to generate English subtitles from audio files using AssemblyAI, optionally translate them into Bangla using the `deep_translator` library with Google Translate, and convert video files to audio. You can play the original video, drag and drop the srt file on the media player and get the subtitle.
+A simple GUI application to generate English subtitles from audio files (converted from the original video file) using AssemblyAI, optionally translate them into Bangla using the `deep_translator` library with Google Translate, and convert video files to audio. You can play the original video, drag and drop the srt file on the media player and get the subtitle.
 
 ## Overview
 
