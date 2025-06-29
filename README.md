@@ -1,3 +1,5 @@
+# 404: Discipline Not Found
+
 ## The Graveyard of Misfit Side-Quests.
 
 Where ideas go when my discipline takes a coffee break.
