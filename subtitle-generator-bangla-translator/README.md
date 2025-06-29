@@ -4,7 +4,7 @@ A simple GUI application to generate English subtitles from audio files (convert
 
 ## Overview
 
-This tool allows beginners to:
+This tool allows you to:
 - Select an audio file (e.g., `.mp3`, `.wav`, `.m4a`, `.flac`, `.aac`) or convert a video file (e.g., `.mp4`, `.avi`, `.mkv`) to audio.
 - Generate English subtitles (SRT format) via the AssemblyAI API.
 - Optionally translate the subtitles into Bangla with improved sentence boundary detection.
@@ -84,7 +84,7 @@ Try it with the included `sample.mp3` file or download free audio or video from 
 
 ## Learning with Test Scripts
 
-The `test` folder contains simple scripts to help beginners understand the code:
+The `test` folder contains simple scripts to help you understand the code:
 - `simple_transcription.py`: Transcribes an audio file to an English SRT file.
 - `simple_translation.py`: Translates an English SRT file to Bangla.
 - `translation_with_punctuation.py`: Translates an SRT file to Bangla with full-sentence detection.
