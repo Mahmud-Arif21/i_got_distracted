@@ -27,7 +27,7 @@ The Bangla translation has been enhanced by:
 
 ### Using Conda Environment
 
-1. If you havn't already, install [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda (prefered)](https://www.anaconda.com/products/distribution).
+1. If you haven't already, install [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or [Anaconda (prefered)](https://www.anaconda.com/products/distribution).
 2. Create a new Conda environment and install dependencies:
    ```bash
    conda create -n subtitle_env python=3.9
