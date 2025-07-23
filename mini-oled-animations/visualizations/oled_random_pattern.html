@@ -1,0 +1,230 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>128x64 OLED Display Simulator - Random Patterns</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 2px solid black;
+            background-color: black;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        h1, h2 {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <button onclick="togglePause()">Pause/Resume</button>
+        <button onclick="resetAnimation()">Reset</button>
+    </div>
+    <div>
+        <canvas id="oledCanvas" width="128" height="64" style="width: 256px; height: 128px;"></canvas>
+    </div>
+    <h1>128x64 OLED Display Simulator</h1>
+    <h2>Random Pattern Animation</h2>
+
+    <script>
+        const canvas = document.getElementById('oledCanvas');
+        const ctx = canvas.getContext('2d');
+        const scale = 2;
+        canvas.style.width = `${128 * scale}px`;
+        canvas.style.height = `${64 * scale}px`;
+        let isPaused = false;
+        let startTime = performance.now();
+        let lastSwitch = 0;
+        let curPat = 0;
+        let angle = 0;
+        let offset = 0;
+        const patDur = 4000;
+        const SCR_W = 128;
+        const SCR_H = 64;
+        let animationFrameId;
+
+        function clearDisplay() {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, SCR_W, SCR_H);
+        }
+
+        function drawPixel(x, y, color) {
+            ctx.fillStyle = color === 1 ? 'white' : 'black';
+            ctx.fillRect(x, y, 1, 1);
+        }
+
+        function drawLine(x0, y0, x1, y1, color) {
+            ctx.beginPath();
+            ctx.strokeStyle = color === 1 ? 'white' : 'black';
+            ctx.moveTo(x0, y0);
+            ctx.lineTo(x1, y1);
+            ctx.stroke();
+        }
+
+        function drawCircle(x, y, r, color) {
+            ctx.beginPath();
+            ctx.strokeStyle = color === 1 ? 'white' : 'black';
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.stroke();
+        }
+
+        function drawTriangle(x1, y1, x2, y2, x3, y3, color) {
+            ctx.beginPath();
+            ctx.strokeStyle = color === 1 ? 'white' : 'black';
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.lineTo(x3, y3);
+            ctx.closePath();
+            ctx.stroke();
+        }
+
+        function drawRadLines() {
+            const cx = SCR_W / 2;
+            const cy = SCR_H / 2;
+            for (let i = 0; i < 16; i++) {
+                const a = angle + (2 * Math.PI / 16) * i;
+                const x = cx + Math.cos(a) * (SCR_W / 2);
+                const y = cy + Math.sin(a) * (SCR_H / 2);
+                drawLine(cx, cy, x, y, 1);
+            }
+        }
+
+        function drawConcCircles() {
+            const maxR = Math.min(SCR_W, SCR_H) / 2;
+            const step = 6;
+            const phase = Math.floor(angle * 20) % step;
+            for (let r = phase; r < maxR; r += step) {
+                drawCircle(SCR_W / 2, SCR_H / 2, r, 1);
+            }
+        }
+
+        function drawMirrTris() {
+            const w = SCR_W;
+            const h = SCR_H;
+            const cx = w / 2;
+            const cy = h / 2;
+            for (let side = 0; side < 3; side++) {
+                const a0 = angle + side * 2 * Math.PI / 3;
+                const a1 = angle + (side + 1) * 2 * Math.PI / 3;
+                const x0 = cx + Math.cos(a0) * (h / 2 - 2);
+                const y0 = cy + Math.sin(a0) * (h / 2 - 2);
+                const x1 = cx + Math.cos(a1) * (h / 2 - 2);
+                const y1 = cy + Math.sin(a1) * (h / 2 - 2);
+                drawTriangle(cx, cy, x0, y0, x1, y1, 1);
+                drawTriangle(w - cx, cy, w - x0, y0, w - x1, y1, 1);
+            }
+        }
+
+        function drawSineBands() {
+            for (let y = 0; y < SCR_H; y += 8) {
+                const shift = Math.floor(Math.sin((y / SCR_H) * 2 * Math.PI + angle) * 20);
+                for (let x = 0; x < SCR_W; x++) {
+                    if (((x + offset + shift) / 4) % 2 === 0) {
+                        drawPixel(x, y + ((y / 8) % 2) * 4, 1);
+                    }
+                }
+            }
+        }
+
+        const patterns = [
+            drawRadLines,
+            drawConcCircles,
+            drawMirrTris,
+            drawSineBands
+        ];
+
+        function animate(timestamp) {
+            if (isPaused) {
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+
+            const now = timestamp - startTime;
+            if (now - lastSwitch >= patDur) {
+                curPat = (curPat + 1) % 4;
+                lastSwitch = now;
+                angle = 0;
+                offset = 0;
+            }
+
+            clearDisplay();
+            patterns[curPat]();
+            angle += 0.05;
+            offset = (offset + 2) % SCR_W;
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            if (!isPaused) {
+                startTime = performance.now() - (performance.now() - startTime);
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        }
+
+        function resetAnimation() {
+            isPaused = false;
+            startTime = performance.now();
+            lastSwitch = 0;
+            curPat = 0;
+            angle = 0;
+            offset = 0;
+            clearDisplay();
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        startTime = performance.now();
+        animationFrameId = requestAnimationFrame(animate);
+    </script>
+</body>
+</html>

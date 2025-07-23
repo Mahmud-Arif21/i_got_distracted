@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>128x64 OLED Display Simulator - Eyes Emotions</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 2px solid black;
+            background-color: black;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        h1, h2 {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <button onclick="togglePause()">Pause/Resume</button>
+        <button onclick="resetAnimation()">Reset</button>
+    </div>
+    <div>
+        <canvas id="oledCanvas" width="128" height="64" style="width: 256px; height: 128px;"></canvas>
+    </div>
+    <h1>128x64 OLED Display Simulator</h1>
+    <h2>Eyes Emotions Animation</h2>
+
+    <script>
+        const canvas = document.getElementById('oledCanvas');
+        const ctx = canvas.getContext('2d');
+        const scale = 2;
+        canvas.style.width = `${128 * scale}px`;
+        canvas.style.height = `${64 * scale}px`;
+        const SCR_W = 128;
+        const SCR_H = 64;
+        const refEyeH = 40;
+        const refEyeW = 40;
+        const refEyeGap = 10;
+        const refCornerR = 10;
+        let lEyeH = refEyeH;
+        let lEyeW = refEyeW;
+        let lEyeX = 32;
+        let lEyeY = 32;
+        let rEyeX = 32 + refEyeW + refEyeGap;
+        let rEyeY = 32;
+        let rEyeH = refEyeH;
+        let rEyeW = refEyeW;
+        let animationState = 'sleep';
+        let animationStartTime = performance.now();
+        let frameIndex = 0;
+        let angleOffset = 0;
+        let isPaused = false;
+        let animationFrameId;
+        let lastFrameTime = 0;
+
+        function clearDisplay() {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, SCR_W, SCR_H);
+        }
+
+        function fillRoundRect(x, y, w, h, r, color) {
+            ctx.beginPath();
+            ctx.fillStyle = color === 1 ? 'white' : 'black';
+            x = Math.round(x);
+            y = Math.round(y);
+            w = Math.round(w);
+            h = Math.round(h);
+            r = Math.min(r, Math.min(w / 2, h / 2));
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.arcTo(x + w, y, x + w, y + r, r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+            ctx.lineTo(x + r, y + h);
+            ctx.arcTo(x, y + h, x, y + h - r, r);
+            ctx.lineTo(x, y + r);
+            ctx.arcTo(x, y, x + r, y, r);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function fillTriangle(x1, y1, x2, y2, x3, y3, color) {
+            ctx.beginPath();
+            ctx.fillStyle = color === 1 ? 'white' : 'black';
+            ctx.moveTo(Math.round(x1), Math.round(y1));
+            ctx.lineTo(Math.round(x2), Math.round(y2));
+            ctx.lineTo(Math.round(x3), Math.round(y3));
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function drawLine(x1, y1, x2, y2, color) {
+            ctx.beginPath();
+            ctx.strokeStyle = color === 1 ? 'white' : 'black';
+            ctx.lineWidth = 1;
+            ctx.moveTo(Math.round(x1), Math.round(y1));
+            ctx.lineTo(Math.round(x2), Math.round(y2));
+            ctx.stroke();
+        }
+
+        function fillCircle(x, y, r, color) {
+            ctx.beginPath();
+            ctx.fillStyle = color === 1 ? 'white' : 'black';
+            ctx.arc(Math.round(x), Math.round(y), r, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
+        function drawEyes(update = true) {
+            clearDisplay();
+            let x = lEyeX - lEyeW / 2;
+            let y = lEyeY - lEyeH / 2;
+            fillRoundRect(x, y, lEyeW, lEyeH, refCornerR, 1);
+            x = rEyeX - rEyeW / 2;
+            y = rEyeY - rEyeH / 2;
+            fillRoundRect(x, y, rEyeW, rEyeH, refCornerR, 1);
+        }
+
+        function centerEyes(update = true) {
+            lEyeH = refEyeH;
+            lEyeW = refEyeW;
+            rEyeH = refEyeH;
+            rEyeW = refEyeW;
+            lEyeX = SCR_W / 2 - refEyeW / 2 - refEyeGap / 2;
+            lEyeY = SCR_H / 2;
+            rEyeX = SCR_W / 2 + refEyeW / 2 + refEyeGap / 2;
+            rEyeY = SCR_H / 2;
+            drawEyes(update);
+        }
+
+        function blink(spd = 12) {
+            if (frameIndex < 3) {
+                lEyeH = Math.max(1, lEyeH - spd);
+                rEyeH = Math.max(1, rEyeH - spd);
+                drawEyes();
+                return false;
+            } else if (frameIndex < 6) {
+                lEyeH = Math.min(refEyeH, lEyeH + spd);
+                rEyeH = Math.min(refEyeH, rEyeH + spd);
+                drawEyes();
+                return false;
+            }
+            return true;
+        }
+
+        function sleep() {
+            lEyeH = 2;
+            rEyeH = 2;
+            drawEyes(true);
+        }
+
+        function wakeup() {
+            if (frameIndex === 0) {
+                sleep();
+            }
+            if (frameIndex <= refEyeH / 2) {
+                lEyeH = frameIndex * 2;
+                rEyeH = frameIndex * 2;
+                drawEyes(true);
+                return false;
+            }
+            return true;
+        }
+
+        function happyEyes() {
+            if (frameIndex === 0) {
+                centerEyes(false);
+            }
+            if (frameIndex < 10) {
+                let offset = refEyeH / 2 - frameIndex * 2;
+                fillTriangle(
+                    lEyeX - lEyeW / 2 - 1, lEyeY + offset,
+                    lEyeX + lEyeW / 2 + 1, lEyeY + 5 + offset,
+                    lEyeX - lEyeW / 2 - 1, lEyeY + lEyeH + offset,
+                    0
+                );
+                fillTriangle(
+                    rEyeX + rEyeW / 2 + 1, rEyeY + offset,
+                    rEyeX - rEyeW / 2 - 1, rEyeY + 5 + offset,
+                    rEyeX + rEyeW / 2 + 1, rEyeY + rEyeH + offset,
+                    0
+                );
+                return false;
+            }
+            return true;
+        }
+
+        function dizzyEyes() {
+            if (frameIndex === 0) {
+                centerEyes(false);
+                angleOffset = 0;
+            }
+            if (frameIndex < 40) {
+                drawEyes(false);
+                drawSpiral(lEyeX, lEyeY, 12, angleOffset);
+                drawSpiral(rEyeX, rEyeY, 12, -angleOffset);
+                angleOffset += 0.3;
+                return false;
+            }
+            return true;
+        }
+
+        function drawSpiral(cx, cy, maxR, angleShift) {
+            let a = 1.0;
+            let b = 1.5;
+            let thetaStep = 0.3;
+            let prevX = cx;
+            let prevY = cy;
+            for (let theta = 0; theta < 6.28 * 3; theta += thetaStep) {
+                let r = a + b * theta;
+                if (r > maxR) break;
+                let x = cx + r * Math.cos(theta + angleShift);
+                let y = cy + r * Math.sin(theta + angleShift);
+                drawLine(prevX, prevY, x, y, 0);
+                fillCircle(x, y, 1, 0);
+                prevX = x;
+                prevY = y;
+            }
+        }
+
+        function sadEyes() {
+            if (frameIndex === 0) {
+                centerEyes(false);
+            }
+            if (frameIndex < 10) {
+                let offset = -refEyeH / 2 + frameIndex * 2;
+                fillTriangle(
+                    lEyeX - lEyeW / 2 - 1, lEyeY + offset,
+                    lEyeX + lEyeW / 2 + 1, lEyeY - 5 + offset,
+                    lEyeX - lEyeW / 2 - 1, lEyeY - lEyeH + offset,
+                    0
+                );
+                fillTriangle(
+                    rEyeX + rEyeW / 2 + 1, rEyeY + offset,
+                    rEyeX - rEyeW / 2 - 1, rEyeY - 5 + offset,
+                    rEyeX + rEyeW / 2 + 1, rEyeY - rEyeH + offset,
+                    0
+                );
+                return false;
+            }
+            return true;
+        }
+
+        function angryEyes() {
+            if (frameIndex === 0) {
+                centerEyes(false);
+            }
+            if (frameIndex < 10) {
+                let offset = -refEyeH / 2 + frameIndex * 2;
+                fillTriangle(
+                    lEyeX + lEyeW / 2 + 1, lEyeY + offset,
+                    lEyeX - lEyeW / 2 - 1, lEyeY - 10 + offset,
+                    lEyeX + lEyeW / 2 + 1, lEyeY - lEyeH + offset,
+                    0
+                );
+                fillTriangle(
+                    rEyeX - rEyeW / 2 - 1, rEyeY + offset,
+                    rEyeX + rEyeW / 2 + 1, rEyeY - 10 + offset,
+                    rEyeX - rEyeW / 2 - 1, rEyeY - rEyeH + offset,
+                    0
+                );
+                return false;
+            }
+            return true;
+        }
+
+        function moveBigEye(dir) {
+            const oversize = 1, moveAmp = 2, blinkAmp = 5;
+            if (frameIndex < 3) {
+                lEyeX += moveAmp * dir;
+                rEyeX += moveAmp * dir;
+                lEyeH -= blinkAmp;
+                rEyeH -= blinkAmp;
+                if (dir > 0) {
+                    rEyeH += oversize;
+                    rEyeW += oversize;
+                } else {
+                    lEyeH += oversize;
+                    lEyeW += oversize;
+                }
+                drawEyes();
+                return false;
+            } else if (frameIndex < 6) {
+                lEyeX += moveAmp * dir;
+                rEyeX += moveAmp * dir;
+                lEyeH += blinkAmp;
+                rEyeH += blinkAmp;
+                if (dir > 0) {
+                    rEyeH += oversize;
+                    rEyeW += oversize;
+                } else {
+                    lEyeH += oversize;
+                    lEyeW += oversize;
+                }
+                drawEyes();
+                return false;
+            } else if (frameIndex === 6) {
+                // Hold position for 1000ms like Arduino
+                drawEyes();
+                return false;
+            } else if (frameIndex < 70) { // Hold for about 1 second at 60fps
+                drawEyes();
+                return false;
+            } else if (frameIndex < 73) {
+                lEyeX -= moveAmp * dir;
+                rEyeX -= moveAmp * dir;
+                lEyeH -= blinkAmp;
+                rEyeH -= blinkAmp;
+                if (dir > 0) {
+                    rEyeH -= oversize;
+                    rEyeW -= oversize;
+                } else {
+                    lEyeH -= oversize;
+                    lEyeW -= oversize;
+                }
+                drawEyes();
+                return false;
+            } else if (frameIndex < 76) {
+                lEyeX -= moveAmp * dir;
+                rEyeX -= moveAmp * dir;
+                lEyeH += blinkAmp;
+                rEyeH += blinkAmp;
+                if (dir > 0) {
+                    rEyeH -= oversize;
+                    rEyeW -= oversize;
+                } else {
+                    lEyeH -= oversize;
+                    lEyeW -= oversize;
+                }
+                drawEyes();
+                return false;
+            }
+            centerEyes();
+            return true;
+        }
+
+        const animationSequence = [
+            { state: 'sleep', duration: 1000, func: () => { sleep(); return true; } },
+            { state: 'wakeup', duration: 1000, func: wakeup },
+            { state: 'centerEyes', duration: 500, func: () => { centerEyes(true); return true; } },
+            { state: 'moveRightBigEye', duration: 2000, func: () => moveBigEye(1) },
+            { state: 'pause1', duration: 500, func: () => { drawEyes(); return true; } },
+            { state: 'moveLeftBigEye', duration: 2000, func: () => moveBigEye(-1) },
+            { state: 'pause2', duration: 500, func: () => { drawEyes(); return true; } },
+            { state: 'blink10', duration: 300, func: () => blink(10) },
+            { state: 'pause3', duration: 300, func: () => { drawEyes(); return true; } },
+            { state: 'blink20', duration: 300, func: () => blink(20) },
+            { state: 'pause4', duration: 500, func: () => { drawEyes(); return true; } },
+            { state: 'happyEyes', duration: 1500, func: happyEyes },
+            { state: 'pause5', duration: 500, func: () => { drawEyes(); return true; } },
+            { state: 'sadEyes', duration: 1500, func: sadEyes },
+            { state: 'pause6', duration: 500, func: () => { drawEyes(); return true; } },
+            { state: 'angryEyes', duration: 1500, func: angryEyes },
+            { state: 'pause7', duration: 500, func: () => { drawEyes(); return true; } },
+            { state: 'dizzyEyes', duration: 3200, func: dizzyEyes },
+            { state: 'pause8', duration: 500, func: () => { drawEyes(); return true; } }
+        ];
+
+        let currentStateIndex = 0;
+
+        function animate(timestamp) {
+            if (isPaused) {
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+
+            // Throttle to roughly match Arduino timing
+            if (timestamp - lastFrameTime < 16) { // ~60fps
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+            lastFrameTime = timestamp;
+
+            const currentState = animationSequence[currentStateIndex];
+            if (!currentState) {
+                currentStateIndex = 0;
+                frameIndex = 0;
+                animationStartTime = timestamp;
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+
+            animationState = currentState.state;
+
+            // Handle state transitions with timing similar to Arduino delays
+            if (currentState.func()) {
+                if (timestamp - animationStartTime >= currentState.duration) {
+                    currentStateIndex = (currentStateIndex + 1) % animationSequence.length;
+                    frameIndex = 0;
+                    animationStartTime = timestamp;
+                }
+            } else {
+                frameIndex++;
+            }
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            if (!isPaused) {
+                animationStartTime = performance.now();
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        }
+
+        function resetAnimation() {
+            isPaused = false;
+            currentStateIndex = 0;
+            frameIndex = 0;
+            animationStartTime = performance.now();
+            lEyeH = refEyeH;
+            lEyeW = refEyeW;
+            lEyeX = 32;
+            lEyeY = 32;
+            rEyeX = 32 + refEyeW + refEyeGap;
+            rEyeY = 32;
+            rEyeH = refEyeH;
+            rEyeW = refEyeW;
+            angleOffset = 0;
+            clearDisplay();
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        resetAnimation();
+    </script>
+</body>
+</html>

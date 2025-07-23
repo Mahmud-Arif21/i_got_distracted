@@ -1,0 +1,381 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>128x64 OLED Display Simulator - Space Invaders</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 2px solid black;
+            background-color: black;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        h1, h2 {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <button onclick="togglePause()">Pause/Resume</button>
+        <button onclick="resetAnimation()">Reset</button>
+    </div>
+    <div>
+        <canvas id="oledCanvas" width="128" height="64" style="width: 256px; height: 128px;"></canvas>
+    </div>
+    <h1>128x64 OLED Display Simulator</h1>
+    <h2>Space Invaders Game</h2>
+
+    <script>
+        const canvas = document.getElementById('oledCanvas');
+        const ctx = canvas.getContext('2d');
+        const scale = 2;
+        canvas.style.width = `${128 * scale}px`;
+        canvas.style.height = `${64 * scale}px`;
+        const SCR_W = 128;
+        const SCR_H = 64;
+        const shipW = 12;
+        const shipH = 4;
+        const alienW = 8;
+        const alienH = 6;
+        const alienGap = 4;
+        const shelterW = 12;
+        const shelterH = 6;
+        const shelterCnt = 4;
+        const bulletW = 2;
+        const bulletH = 4;
+        let alienRows = 4;
+        let alienCols = 6;
+        let alienMoveMs = 500;
+        const alienStepX = 4;
+        const alienStepY = 4;
+        const shipSpd = 3;
+        const bulletSpd = 4;
+        const descendSpd = 0.25;
+        const frameMs = 30;
+        const gameOverMs = 2000;
+        let shipX = (SCR_W - shipW) / 2;
+        let shipBullet = { x: 0, y: 0, active: false };
+        let aliens = Array.from({ length: 8 }, () => Array.from({ length: 8 }, () => ({ x: 0, y: 0, alive: false })));
+        let shelters = new Array(shelterCnt).fill().map(() => ({ x: 0, y: 0, hp: 0 }));
+        let alienDir = 1;
+        let lastAlienMove = performance.now();
+        let lastFrame = performance.now();
+        let gameOverTime = 0;
+        let score = 0;
+        let level = 1;
+        let gameOver = false;
+        let isPaused = false;
+        let animationFrameId;
+
+        function clearDisplay() {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, SCR_W, SCR_H);
+        }
+
+        function fillRect(x, y, w, h, color) {
+            ctx.fillStyle = color === 1 ? 'white' : 'black';
+            ctx.fillRect(Math.round(x), Math.round(y), w, h);
+        }
+
+        function drawRect(x, y, w, h, color) {
+            ctx.strokeStyle = color === 1 ? 'white' : 'black';
+            ctx.strokeRect(Math.round(x), Math.round(y), w, h);
+        }
+
+        function drawLine(x0, y0, x1, y1, color) {
+            ctx.beginPath();
+            ctx.strokeStyle = color === 1 ? 'white' : 'black';
+            ctx.moveTo(Math.round(x0), Math.round(y0));
+            ctx.lineTo(Math.round(x1), Math.round(y1));
+            ctx.stroke();
+        }
+
+        function drawText(x, y, text, size, color) {
+            ctx.font = `${size * 8}px monospace`;
+            ctx.fillStyle = color === 1 ? 'white' : 'black';
+            ctx.fillText(text, x, y + 8); // Adjust y for baseline
+        }
+
+        function resetGame() {
+            shipX = (SCR_W - shipW) / 2;
+            shipBullet.active = false;
+            alienDir = 1;
+            score = 0;
+            level = 1;
+            gameOver = false;
+            spawnAliens();
+            spawnShelters();
+            lastAlienMove = performance.now();
+            lastFrame = performance.now();
+            gameOverTime = 0;
+        }
+
+        function spawnAliens() {
+            let startY = -(alienRows * (alienH + alienGap));
+            for (let r = 0; r < alienRows; r++) {
+                for (let c = 0; c < alienCols; c++) {
+                    aliens[r][c].alive = true;
+                    aliens[r][c].x = c * (alienW + alienGap) + alienGap;
+                    aliens[r][c].y = startY + r * (alienH + alienGap);
+                }
+            }
+        }
+
+        function spawnShelters() {
+            for (let i = 0; i < shelterCnt; i++) {
+                shelters[i].hp = shelterH;
+                shelters[i].x = (i * (SCR_W - 16 - shelterW) / (shelterCnt - 1)) + 16;
+                shelters[i].y = SCR_H - 24;
+            }
+        }
+
+        function aiControl() {
+            let tx = shipX;
+            let found = false;
+            let maxY = -1;
+            for (let r = 0; r < alienRows; r++) {
+                for (let c = 0; c < alienCols; c++) {
+                    if (aliens[r][c].alive && aliens[r][c].y > maxY) {
+                        maxY = aliens[r][c].y;
+                        tx = aliens[r][c].x + (alienW - shipW) / 2.0;
+                        found = true;
+                    }
+                }
+            }
+            if (found) {
+                if (shipX < tx) shipX += shipSpd;
+                else if (shipX > tx) shipX -= shipSpd;
+                shipX = Math.max(0, Math.min(shipX, SCR_W - shipW));
+            }
+            if (!shipBullet.active && found) {
+                shipBullet.active = true;
+                shipBullet.x = shipX + (shipW - bulletW) / 2.0;
+                shipBullet.y = SCR_H - shipH - bulletH - 2;
+            }
+        }
+
+        function updateBullet() {
+            if (!shipBullet.active) return;
+            shipBullet.y -= bulletSpd;
+            if (shipBullet.y < 0) {
+                shipBullet.active = false;
+                return;
+            }
+            for (let r = 0; r < alienRows; r++) {
+                for (let c = 0; c < alienCols; c++) {
+                    if (!aliens[r][c].alive) continue;
+                    if (shipBullet.x >= aliens[r][c].x &&
+                        shipBullet.x <= aliens[r][c].x + alienW &&
+                        shipBullet.y >= aliens[r][c].y &&
+                        shipBullet.y <= aliens[r][c].y + alienH) {
+                        aliens[r][c].alive = false;
+                        shipBullet.active = false;
+                        score += 10;
+                        return;
+                    }
+                }
+            }
+            for (let i = 0; i < shelterCnt; i++) {
+                let s = shelters[i];
+                if (s.hp === 0) continue;
+                if (shipBullet.x >= s.x &&
+                    shipBullet.x <= s.x + shelterW &&
+                    shipBullet.y >= s.y &&
+                    shipBullet.y <= s.y + s.hp) {
+                    s.hp--;
+                    shipBullet.active = false;
+                    return;
+                }
+            }
+        }
+
+        function moveAliens() {
+            let edge = false;
+            for (let r = 0; r < alienRows && !edge; r++) {
+                for (let c = 0; c < alienCols; c++) {
+                    let a = aliens[r][c];
+                    if (!a.alive) continue;
+                    let nx = a.x + alienDir * alienStepX;
+                    if (nx < 0 || nx + alienW > SCR_W) {
+                        edge = true;
+                        break;
+                    }
+                }
+            }
+            for (let r = 0; r < alienRows; r++) {
+                for (let c = 0; c < alienCols; c++) {
+                    let a = aliens[r][c];
+                    if (!a.alive) continue;
+                    if (edge) a.y += alienStepY;
+                    else a.x += alienDir * alienStepX;
+                    aliens[r][c] = a;
+                }
+            }
+            if (edge) alienDir = -alienDir;
+        }
+
+        function checkLevel() {
+            let any = false;
+            for (let r = 0; r < alienRows; r++) {
+                for (let c = 0; c < alienCols; c++) {
+                    if (aliens[r][c].alive) any = true;
+                }
+            }
+            if (!any) {
+                level++;
+                if (alienMoveMs > 100) alienMoveMs -= 50;
+                spawnAliens();
+                spawnShelters();
+            }
+            for (let r = 0; r < alienRows; r++) {
+                for (let c = 0; c < alienCols; c++) {
+                    if (aliens[r][c].alive &&
+                        aliens[r][c].y + alienH >= SCR_H - shipH - 2) {
+                        if (!gameOver) {
+                            gameOver = true;
+                            gameOverTime = performance.now();
+                        }
+                    }
+                }
+            }
+        }
+
+        function drawFrame() {
+            clearDisplay();
+            let shipY = SCR_H - shipH - 1;
+            fillRect(shipX, shipY, shipW, shipH, 1);
+            drawLine(shipX, shipY, shipX + shipW / 2, shipY - shipH, 1);
+            drawLine(shipX + shipW, shipY, shipX + shipW / 2, shipY - shipH, 1);
+            for (let r = 0; r < alienRows; r++) {
+                for (let c = 0; c < alienCols; c++) {
+                    let a = aliens[r][c];
+                    if (!a.alive) continue;
+                    drawRect(a.x, a.y, alienW, alienH, 1);
+                }
+            }
+            for (let i = 0; i < shelterCnt; i++) {
+                let s = shelters[i];
+                if (s.hp === 0) continue;
+                fillRect(s.x, s.y, shelterW, s.hp, 1);
+            }
+            if (shipBullet.active) {
+                fillRect(shipBullet.x, shipBullet.y, bulletW, bulletH, 1);
+            }
+            drawText(2, 0, `S:${score}`, 1, 1);
+            drawText(80, 0, `L:${level}`, 1, 1);
+            if (gameOver) {
+                drawText(30, SCR_H / 2 - 4, "GAME OVER", 1, 1);
+            }
+        }
+
+        function animate(timestamp) {
+            if (isPaused) {
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+
+            if (timestamp - lastFrame < frameMs) {
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+            lastFrame = timestamp;
+
+            if (!gameOver) {
+                aiControl();
+                updateBullet();
+                for (let r = 0; r < alienRows; r++) {
+                    for (let c = 0; c < alienCols; c++) {
+                        if (aliens[r][c].alive) {
+                            aliens[r][c].y += descendSpd;
+                        }
+                    }
+                }
+                if (timestamp - lastAlienMove >= alienMoveMs) {
+                    moveAliens();
+                    lastAlienMove = timestamp;
+                }
+                checkLevel();
+            } else {
+                if (timestamp - gameOverTime >= gameOverMs) {
+                    resetGame();
+                }
+            }
+            drawFrame();
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            if (!isPaused) {
+                lastFrame = performance.now();
+                lastAlienMove = performance.now();
+                if (gameOver) gameOverTime = performance.now();
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        }
+
+        function resetAnimation() {
+            isPaused = false;
+            resetGame();
+            lastFrame = performance.now();
+            lastAlienMove = performance.now();
+            gameOverTime = 0;
+            clearDisplay();
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        resetAnimation();
+    </script>
+</body>
+</html>
