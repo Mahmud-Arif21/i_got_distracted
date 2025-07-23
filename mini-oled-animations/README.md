@@ -8,7 +8,7 @@ So, I was just trying to get my 128x64 OLED display to do *something*—anything
 
 ## Simulations
 
-The `visualizations` folder has html files for simulating the exact animation for each arduino code. Simply open the html file for the animation you want to check before using it.
+The `visualizations` folder has html files for simulating the exact animation for each arduino sketches. Simply open the html file for the animation you want to check before using it.
 
 ## Sketches
 
