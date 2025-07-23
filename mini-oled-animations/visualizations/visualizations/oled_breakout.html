@@ -1,0 +1,416 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>128x64 OLED Display Simulator - Breakout</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 2px solid black;
+            background-color: black;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        h1, h2 {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <button onclick="togglePause()">Pause/Resume</button>
+        <button onclick="resetAnimation()">Reset</button>
+    </div>
+    <div>
+        <canvas id="oledCanvas" width="128" height="64" style="width: 256px; height: 128px;"></canvas>
+    </div>
+    <h1>128x64 OLED Display Simulator</h1>
+    <h2>Breakout Game</h2>
+
+    <script>
+        const canvas = document.getElementById('oledCanvas');
+        const ctx = canvas.getContext('2d');
+        const scale = 2;
+        canvas.style.width = `${128 * scale}px`;
+        canvas.style.height = `${64 * scale}px`;
+        const SCR_W = 128;
+        const SCR_H = 64;
+        const padW = 16;
+        const padH = 3;
+        const ballSz = 2;
+        const brkW = 14;
+        const brkH = 4;
+        const brkRows = 4;
+        const brkCols = 8;
+        const brkGap = 2;
+        const maxBonus = 2;
+        const maxParts = 10;
+        const angFact = 0.15;
+        const padSpd = 3.0;
+        let ball = { x: 64, y: 32, vx: 0, vy: 0, active: true };
+        let paddle = { x: (SCR_W - padW) / 2, y: SCR_H - padH - 2 };
+        let bricks = Array.from({ length: brkRows }, () => new Array(brkCols).fill(0));
+        let bonuses = new Array(maxBonus).fill().map(() => ({ x: 0, y: 0, vy: 0, active: false, type: 0 }));
+        let particles = new Array(maxParts).fill().map(() => ({ x: 0, y: 0, vx: 0, vy: 0, life: 0 }));
+        let score = 0;
+        let lives = 3;
+        let gameOver = false;
+        let gameOverTimer = 0;
+        let lastUpdate = performance.now();
+        const frameTime = 33;
+        let showTitle = true;
+        let titleFrame = 0;
+        let isPaused = false;
+        let animationFrameId;
+
+        function clearDisplay() {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, SCR_W, SCR_H);
+        }
+
+        function fillRect(x, y, w, h, color) {
+            ctx.fillStyle = color === 1 ? 'white' : 'black';
+            ctx.fillRect(Math.round(x), Math.round(y), w, h);
+        }
+
+        function drawPixel(x, y, color) {
+            ctx.fillStyle = color === 1 ? 'white' : 'black';
+            ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+        }
+
+        function drawText(x, y, text, size, color) {
+            ctx.font = `${size * 8}px monospace`;
+            ctx.fillStyle = color === 1 ? 'white' : 'black';
+            ctx.fillText(text, x, y + 8); // Adjust y for baseline
+        }
+
+        function drawRect(x, y, w, h, color) {
+            ctx.strokeStyle = color === 1 ? 'white' : 'black';
+            ctx.strokeRect(Math.round(x), Math.round(y), w, h);
+        }
+
+        function initGame() {
+            score = 0;
+            lives = 3;
+            gameOver = false;
+            gameOverTimer = 0;
+            resetLevel();
+        }
+
+        function resetLevel() {
+            paddle.x = (SCR_W - padW) / 2;
+            paddle.y = SCR_H - padH - 2;
+            ball.x = SCR_W / 2;
+            ball.y = paddle.y - ballSz - 2;
+            ball.vx = (Math.random() * 300 - 150) / 100.0;
+            ball.vy = -2.0;
+            ball.active = true;
+            for (let r = 0; r < brkRows; r++) {
+                for (let c = 0; c < brkCols; c++) {
+                    bricks[r][c] = Math.random() < 0.2 ? 2 : 1;
+                }
+            }
+            for (let b of bonuses) b.active = false;
+            for (let p of particles) p.life = 0;
+        }
+
+        function predictBallX() {
+            let bx = ball.x, by = ball.y;
+            let vx = ball.vx, vy = ball.vy;
+            while (by < paddle.y) {
+                bx += vx;
+                by += vy;
+                if (bx <= 1 || bx >= SCR_W - 1) vx = -vx;
+                if (by <= 1) vy = -vy;
+            }
+            return bx;
+        }
+
+        function updateGame() {
+            let sumX = 0;
+            let count = 0;
+            for (let r = 0; r < brkRows; r++) {
+                for (let c = 0; c < brkCols; c++) {
+                    if (bricks[r][c] > 0) {
+                        let cx = c * (brkW + brkGap) + brkGap + brkW / 2.0;
+                        sumX += cx;
+                        count++;
+                    }
+                }
+            }
+            let brkCtrX = count > 0 ? sumX / count : SCR_W / 2.0;
+
+            let targetX;
+            if (ball.vy > 0) {
+                let dropX = predictBallX();
+                let diff = brkCtrX - dropX;
+                let offset = Math.max(-padW / 2, Math.min(diff * angFact, padW / 2));
+                targetX = dropX - padW / 2 + offset;
+            } else {
+                targetX = (SCR_W - padW) / 2;
+            }
+
+            if (paddle.x < targetX) paddle.x += Math.min(padSpd, targetX - paddle.x);
+            else if (paddle.x > targetX) paddle.x += Math.max(-padSpd, targetX - paddle.x);
+            paddle.x = Math.max(0, Math.min(paddle.x, SCR_W - padW));
+
+            if (ball.active) {
+                ball.x += ball.vx;
+                ball.y += ball.vy;
+                if (ball.x <= 1 || ball.x >= SCR_W - 1) {
+                    ball.vx = -ball.vx;
+                    ball.x = Math.max(1, Math.min(ball.x, SCR_W - 1));
+                }
+                if (ball.y <= 1) {
+                    ball.vy = -ball.vy;
+                    ball.y = 1;
+                }
+                if (ball.y >= paddle.y - ballSz &&
+                    ball.y <= paddle.y + padH &&
+                    ball.x >= paddle.x && ball.x <= paddle.x + padW) {
+                    ball.vy = -ball.vy;
+                    let hitNorm = (ball.x - paddle.x) / padW;
+                    ball.vx = (hitNorm - 0.5) * 4;
+                    ball.y = paddle.y - ballSz;
+                    for (let i = 0; i < 3; i++) {
+                        for (let p of particles) {
+                            if (p.life <= 0) {
+                                p.x = ball.x;
+                                p.y = ball.y;
+                                p.vx = (Math.random() * 100 - 50) / 100.0;
+                                p.vy = (Math.random() * 100 - 50) / 100.0;
+                                p.life = Math.floor(Math.random() * (10 - 5 + 1)) + 5;
+                                break;
+                            }
+                        }
+                    }
+                }
+                for (let r = 0; r < brkRows; r++) {
+                    for (let c = 0; c < brkCols; c++) {
+                        if (bricks[r][c] > 0) {
+                            let bx = c * (brkW + brkGap) + brkGap;
+                            let by = r * (brkH + brkGap) + brkGap + 5;
+                            if (ball.x >= bx && ball.x <= bx + brkW &&
+                                ball.y >= by && ball.y <= by + brkH) {
+                                let t = bricks[r][c];
+                                bricks[r][c] = 0;
+                                ball.vy = -ball.vy;
+                                score += 10;
+                                if (t === 2) {
+                                    for (let b of bonuses) {
+                                        if (!b.active) {
+                                            b.active = true;
+                                            b.x = bx + brkW / 2;
+                                            b.y = by + brkH / 2;
+                                            b.vy = 1.0;
+                                            b.type = 0;
+                                            break;
+                                        }
+                                    }
+                                }
+                                for (let i = 0; i < 5; i++) {
+                                    for (let p of particles) {
+                                        if (p.life <= 0) {
+                                            p.x = ball.x;
+                                            p.y = ball.y;
+                                            p.vx = (Math.random() * 200 - 100) / 100.0;
+                                            p.vy = (Math.random() * 200 - 100) / 100.0;
+                                            p.life = Math.floor(Math.random() * (20 - 10 + 1)) + 10;
+                                            break;
+                                        }
+                                    }
+                                }
+                                let empty = true;
+                                for (let rr = 0; rr < brkRows; rr++)
+                                    for (let cc = 0; cc < brkCols; cc++)
+                                        if (bricks[rr][cc] > 0) empty = false;
+                                if (empty) resetLevel();
+                                return; // Simulate goto doneBrkChk
+                            }
+                        }
+                    }
+                }
+
+                if (ball.y > SCR_H) {
+                    lives--;
+                    if (lives <= 0) gameOver = true;
+                    else {
+                        ball.x = SCR_W / 2;
+                        ball.y = paddle.y - ballSz - 2;
+                        ball.vx = (Math.random() * 300 - 150) / 100.0;
+                        ball.vy = -2.0;
+                    }
+                }
+            }
+
+            for (let b of bonuses) {
+                if (b.active) {
+                    b.y += b.vy;
+                    if (b.y > SCR_H) b.active = false;
+                    else if (b.y >= paddle.y - 2 && b.y <= paddle.y + padH + 2 &&
+                             b.x >= paddle.x && b.x <= paddle.x + padW) {
+                        score += 50;
+                        b.active = false;
+                    }
+                }
+            }
+
+            for (let p of particles) {
+                if (p.life > 0) {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    p.life--;
+                }
+            }
+        }
+
+        function handleGameOver() {
+            if (++gameOverTimer > 90) {
+                initGame();
+                titleFrame = 0;
+                showTitle = true;
+            }
+        }
+
+        function drawGame() {
+            clearDisplay();
+            fillRect(paddle.x, paddle.y, padW, padH, 1);
+            if (ball.active) {
+                fillRect(ball.x - ballSz / 2, ball.y - ballSz / 2, ballSz, ballSz, 1);
+            }
+            for (let r = 0; r < brkRows; r++) {
+                for (let c = 0; c < brkCols; c++) {
+                    if (bricks[r][c] > 0) {
+                        let bx = c * (brkW + brkGap) + brkGap;
+                        let by = r * (brkH + brkGap) + brkGap + 5;
+                        fillRect(bx, by, brkW, brkH, 1);
+                    }
+                }
+            }
+            for (let b of bonuses) {
+                if (b.active) {
+                    fillRect(b.x - 2, b.y - 2, 4, 4, 1);
+                }
+            }
+            for (let p of particles) {
+                if (p.life > 0) {
+                    drawPixel(p.x, p.y, 1);
+                }
+            }
+
+            drawText(2, 0, `S:${score}`, 1, 1);
+            drawText(80, 0, `L:${lives}`, 1, 1);
+
+            if (gameOver) {
+                fillRect(20, 20, 88, 24, 0);
+                drawRect(20, 20, 88, 24, 1);
+                drawText(35, 25, "GAME OVER", 1, 1);
+                drawText(25, 35, `Score: ${score}`, 1, 1);
+            }
+        }
+
+        function animate(timestamp) {
+            if (isPaused) {
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+
+            if (showTitle && titleFrame < 3) {
+                clearDisplay();
+                drawText(30, 20, "BREAKOUT", 1, 1);
+                drawText(20, 35, "Autoplay AI", 1, 1);
+                if (timestamp - lastUpdate >= 600) {
+                    titleFrame++;
+                    lastUpdate = timestamp;
+                }
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+            showTitle = false;
+
+            if (timestamp - lastUpdate < frameTime) {
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+            lastUpdate = timestamp;
+
+            if (!gameOver) {
+                updateGame();
+            } else {
+                handleGameOver();
+            }
+            drawGame();
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            if (!isPaused) {
+                lastUpdate = performance.now();
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        }
+
+        function resetAnimation() {
+            isPaused = false;
+            initGame();
+            titleFrame = 0;
+            showTitle = true;
+            lastUpdate = performance.now();
+            clearDisplay();
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        resetAnimation();
+    </script>
+</body>
+</html>

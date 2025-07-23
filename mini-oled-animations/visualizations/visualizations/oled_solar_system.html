@@ -1,0 +1,157 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>128x64 OLED Display Simulator - Solar System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+        canvas {
+            border: 2px solid black;
+            background-color: black;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        h1, h2 {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <button onclick="togglePause()">Pause/Resume</button>
+        <button onclick="resetAnimation()">Reset</button>
+    </div>
+    <div>
+        <canvas id="oledCanvas" width="128" height="64" style="width: 256px; height: 128px;"></canvas>
+    </div>
+    <h1>128x64 OLED Display Simulator</h1>
+    <h2>Solar System Animation</h2>
+
+    <script>
+        const canvas = document.getElementById('oledCanvas');
+        const ctx = canvas.getContext('2d');
+        const scale = 2;
+        canvas.style.width = `${128 * scale}px`;
+        canvas.style.height = `${64 * scale}px`;
+        let isPaused = false;
+        let startTime = performance.now();
+        let animationFrameId;
+
+        const planets = [
+            { orbitR: 20, angSpd: 0.0015, sz: 2, color: 1, angOff: 0.0 },
+            { orbitR: 30, angSpd: 0.0010, sz: 3, color: 1, angOff: Math.PI / 4 },
+            { orbitR: 40, angSpd: 0.0007, sz: 4, color: 1, angOff: Math.PI / 2 },
+            { orbitR: 50, angSpd: 0.0005, sz: 3, color: 1, angOff: Math.PI }
+        ];
+        const numPlanets = planets.length;
+        const cx = 128 / 2;
+        const cy = 64 / 2;
+
+        function clearDisplay() {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, 128, 64);
+        }
+
+        function drawCircle(x, y, r, color) {
+            ctx.beginPath();
+            ctx.strokeStyle = color === 1 ? 'white' : 'black';
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.stroke();
+        }
+
+        function fillCircle(x, y, r, color) {
+            ctx.beginPath();
+            ctx.fillStyle = color === 1 ? 'white' : 'black';
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+
+        function animate(timestamp) {
+            if (isPaused) {
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+
+            const t = timestamp - startTime;
+            clearDisplay();
+            fillCircle(cx, cy, 6, 1); // Draw sun
+            for (let i = 0; i < numPlanets; i++) {
+                const p = planets[i];
+                const angle = p.angOff + t * p.angSpd;
+                const x = cx + Math.cos(angle) * p.orbitR;
+                const y = cy + Math.sin(angle) * p.orbitR;
+                drawCircle(cx, cy, p.orbitR, 1); // Draw orbit
+                fillCircle(x, y, p.sz, 1); // Draw planet
+            }
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        function togglePause() {
+            isPaused = !isPaused;
+            if (!isPaused) {
+                startTime = performance.now() - (performance.now() - startTime);
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        }
+
+        function resetAnimation() {
+            isPaused = false;
+            startTime = performance.now();
+            clearDisplay();
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+        startTime = performance.now();
+        animationFrameId = requestAnimationFrame(animate);
+    </script>
+</body>
+</html>
