@@ -6,6 +6,10 @@
 
 So, I was just trying to get my 128x64 OLED display to do *something*—anything! I followed every tutorial out there, all suggesting “Use `Adafruit_SSD1306.h`!” And it was a total dud, just a blank screen staring back at me making me think that I bought a damaged product. Then, I switched to `Adafruit_SH110X.h`, ran the example code, the display lit up  That’s when I got a bit carried away and started collecting a bunch of animations for this little screen. Here’s the lineup of sketches that turned my OLED into a mini entertainment hub. Feel free to pick any of them you like and use in your own project.
 
+## Simulations
+
+The `visualizations` folder has html files for simulating the exact animation for each arduino code. Simply open the html file for the animation you want to check before using it.
+
 ## Sketches
 
  1. **SH1106_128x64_i2c_QTPY.ino**
